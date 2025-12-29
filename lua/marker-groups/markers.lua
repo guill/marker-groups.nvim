@@ -588,24 +588,38 @@ function M.sync_extmarks(buf)
           end
         end
       else
-        local recreated_id = M.create_extmark(buf, marker)
-        if recreated_id then
-          pcall(function()
-            local state = require "marker-groups.state"
-            state.update_marker(marker.id, { extmark_id = recreated_id })
-          end)
-          sync_results.updated = sync_results.updated + 1
-          require("marker-groups.feedback").notify(
-            string.format("Marker '%s' extmark recreated", marker.annotation:sub(1, 20)),
-            vim.log.levels.DEBUG,
-            {}
-          )
+        local line_count = api.nvim_buf_line_count(buf)
+        if marker.start_line > line_count then
+          local remove_result = state.remove_marker(marker.id)
+          if remove_result.success then
+            sync_results.updated = sync_results.updated + 1
+            require("marker-groups.feedback").notify(
+              string.format("Marker '%s' removed: marked region no longer exists", marker.annotation:sub(1, 20)),
+              vim.log.levels.INFO,
+              {}
+            )
+          else
+            sync_results.failed = sync_results.failed + 1
+          end
         else
-          require("marker-groups.feedback").notify(
-            string.format("Marker '%s' extmark missing and could not be recreated", marker.annotation:sub(1, 20)),
-            vim.log.levels.DEBUG,
-            {}
-          )
+          local recreated_id = M.create_extmark(buf, marker)
+          if recreated_id then
+            pcall(function()
+              state.update_marker(marker.id, { extmark_id = recreated_id })
+            end)
+            sync_results.updated = sync_results.updated + 1
+            require("marker-groups.feedback").notify(
+              string.format("Marker '%s' extmark recreated", marker.annotation:sub(1, 20)),
+              vim.log.levels.DEBUG,
+              {}
+            )
+          else
+            require("marker-groups.feedback").notify(
+              string.format("Marker '%s' extmark missing and could not be recreated", marker.annotation:sub(1, 20)),
+              vim.log.levels.DEBUG,
+              {}
+            )
+          end
         end
       end
     end
@@ -629,6 +643,10 @@ function M.setup_line_tracking(buf)
     buffer = buf,
     group = group,
     callback = function()
+      if api.nvim_buf_is_valid(buf) then
+        M.update_buffer_markers(buf)
+      end
+
       vim.defer_fn(function()
         if api.nvim_buf_is_valid(buf) then
           M.sync_extmarks(buf)
@@ -641,6 +659,10 @@ function M.setup_line_tracking(buf)
     buffer = buf,
     group = group,
     callback = function()
+      if api.nvim_buf_is_valid(buf) then
+        M.update_buffer_markers(buf)
+      end
+
       vim.defer_fn(function()
         if api.nvim_buf_is_valid(buf) then
           M.sync_extmarks(buf)
@@ -772,13 +794,13 @@ function M.create_extmark(buf, marker)
   local success, extmark_id = pcall(function()
     local extmark_opts = {
       strict = false,
-      right_gravity = false,
+      right_gravity = true,
     }
 
     if marker.start_line ~= marker.end_line then
       extmark_opts.end_line = marker.end_line - 1
       extmark_opts.end_col = 0
-      extmark_opts.end_right_gravity = false
+      extmark_opts.end_right_gravity = true
     end
 
     return api.nvim_buf_set_extmark(buf, ns_id, marker.start_line - 1, 0, extmark_opts)

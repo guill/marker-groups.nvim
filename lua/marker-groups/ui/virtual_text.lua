@@ -9,6 +9,28 @@ local _cached_namespaces = {}
 local _update_timers = {}
 local _hydrating = false
 
+local tracking_ns_id = api.nvim_create_namespace "marker_groups"
+
+local function get_live_marker_positions(buf, marker)
+  if not marker.extmark_id then
+    return marker.start_line, marker.end_line
+  end
+
+  local success, pos = pcall(function()
+    return api.nvim_buf_get_extmark_by_id(buf, tracking_ns_id, marker.extmark_id, { details = true })
+  end)
+
+  if not success or not pos or #pos < 2 then
+    return marker.start_line, marker.end_line
+  end
+
+  local live_start = pos[1] + 1
+  local details = pos[3] or {}
+  local live_end = details.end_row and (details.end_row + 1) or live_start
+
+  return live_start, live_end
+end
+
 local function get_smallest_window_width(bufnr)
   local smallest_width = nil
   for _, win in ipairs(api.nvim_list_wins()) do
@@ -281,8 +303,7 @@ local function render_multiline_below_mode(buf, vt_ns, marker, display_config, p
     wrap_width = math.max(20, win_width - 10)
   end
 
-  local start_line = marker.start_line
-  local end_line = marker.end_line
+  local start_line, end_line = get_live_marker_positions(buf, marker)
 
   if show_borders then
     api.nvim_buf_set_extmark(buf, vt_ns, start_line - 1, 0, {
@@ -394,23 +415,24 @@ function M.update_buffer_display(buf, markers)
 
   for i, marker in ipairs(markers) do
     local success, err = pcall(function()
-      local marker_type = marker.start_line == marker.end_line and "single" or "multiline_start"
+      local live_start, live_end = get_live_marker_positions(buf, marker)
+      local marker_type = live_start == live_end and "single" or "multiline_start"
 
       if display_mode == "below" then
         render_multiline_below_mode(buf, vt_ns, marker, display_config, 1000 + i)
       else
         local virtual_text = create_marker_virtual_text(marker, marker_type)
-        api.nvim_buf_set_extmark(buf, vt_ns, marker.start_line - 1, -1, {
+        api.nvim_buf_set_extmark(buf, vt_ns, live_start - 1, -1, {
           virt_text = virtual_text,
           virt_text_pos = "eol",
           hl_mode = "combine",
           priority = 1000 + i,
         })
 
-        if marker.end_line > marker.start_line then
+        if live_end > live_start then
           local end_vt =
             create_marker_virtual_text(marker, "multiline_end", "End: " .. format_annotation(marker.annotation, 30))
-          api.nvim_buf_set_extmark(buf, vt_ns, marker.end_line - 1, -1, {
+          api.nvim_buf_set_extmark(buf, vt_ns, live_end - 1, -1, {
             virt_text = end_vt,
             virt_text_pos = "eol",
             hl_mode = "combine",
