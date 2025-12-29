@@ -34,7 +34,9 @@ local defaults = {
   },
 
   context_lines = 2,
+  stored_context_lines = 3,
   max_annotation_display = 50,
+  enable_relocation = true,
 
   annotation_display = {
     mode = "eol",
@@ -91,6 +93,7 @@ local function validate_config(config)
 
   local numeric_fields = {
     "context_lines",
+    "stored_context_lines",
     "max_annotation_display",
   }
 
@@ -102,6 +105,7 @@ local function validate_config(config)
 
   local boolean_fields = {
     "debug",
+    "enable_relocation",
   }
 
   for _, field in ipairs(boolean_fields) do

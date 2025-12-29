@@ -14,6 +14,7 @@ A powerful Neovim plugin for organizing and annotating code with grouped markers
 - **🪟 Drawer Viewer**: Right-side drawer to browse all markers with context
 - **🔎 Picker Integrations**: mini.pick, Snacks, Telescope, fzf-lua, and built-in vim.ui
 - **💾 Persistent Storage**: Markers survive Neovim restarts with automatic saving
+- **🔄 Cross-Session Relocation**: Markers automatically adjust when files change on disk
 - **⌨️ Rich Keybindings**: Intuitive keymaps for all operations
 - **🔧 Configurable**: Extensive customization options
 
@@ -136,8 +137,14 @@ require("marker-groups").setup({
     title_pos = "center",
   },
 
-  -- Context shown around markers in viewer/preview
+  -- Context lines shown in drawer viewer and picker previews
   context_lines = 2,
+
+  -- Context lines stored for cross-session marker relocation
+  stored_context_lines = 3,
+
+  -- Enable automatic marker relocation when files change on disk
+  enable_relocation = true,
 
   -- Virtual text display & highlight groups
   max_annotation_display = 50, -- truncate long annotations in EOL mode
@@ -206,6 +213,23 @@ Use `:MarkerAnnotationMode` to change how annotations appear inline:
 | `eol` | (Default) End of line. Multi-line shows first line + "(+N lines)". |
 | `below` | Virtual lines below code with word wrap and optional borders. |
 | `hidden` | Hide inline annotations (drawer-only). |
+
+### Cross-Session Relocation
+
+When files are modified outside of Neovim (e.g., by git, external editors, or tools like OpenCode), markers can become misaligned. The plugin automatically handles this by:
+
+1. Storing the marked content and surrounding context when markers are created
+2. On load, checking if content at stored line numbers still matches
+3. Relocating markers to their new positions using a graduated matching strategy
+
+The relocation algorithm tries increasingly relaxed matching:
+- **Exact match**: Full content + full context matches
+- **Content only**: Content matches but context differs
+- **Context only**: Context matches but content changed (finds the gap)
+- **Partial context**: Matches with progressively shrunk context
+- **No match**: Keeps original line numbers
+
+To disable relocation: `enable_relocation = false`
 
 ## 🎯 Use Cases
 

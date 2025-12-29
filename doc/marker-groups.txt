@@ -29,6 +29,8 @@ code with grouped markers. It allows you to:
 - Search markers with multiple pickers: mini.pick, Snacks, Telescope, fzf-lua,
   or builtin vim.ui
 - Persist markers across Neovim sessions
+- Automatic marker relocation when files change on disk (cross-session drift
+  handling)
 
 ==============================================================================
 2. INSTALLATION                                    *marker-groups-installation*
@@ -170,8 +172,14 @@ Default configuration: >
         title_pos = "center",
       },
       
-      -- Context shown around markers in viewer/preview
+      -- Context lines shown in drawer viewer and picker previews
       context_lines = 2,
+      
+      -- Context lines stored for cross-session marker relocation
+      stored_context_lines = 3,
+      
+      -- Enable automatic marker relocation when files change on disk
+      enable_relocation = true,
       
       -- Virtual text display
       max_annotation_display = 50,
@@ -240,7 +248,19 @@ require("marker-groups.groups").create_group(name)   *marker-groups.groups.creat
     Create a new marker group.
 
 require("marker-groups.markers").add_marker(annotation, group) *marker-groups.markers.add_marker()*
-    Add a marker programmatically.
+    Add a marker at the current cursor position.
+
+                                              *marker-groups.markers.add_marker_at()*
+require("marker-groups.markers").add_marker_at(path, start, end, annotation, group, require_context)
+    Add a marker to a specific file and line range.
+    
+    Parameters:
+      path            - Absolute or relative file path
+      start           - Start line number (1-indexed)
+      end             - End line number (defaults to start for single-line)
+      annotation      - Marker annotation text
+      group           - Target group name (defaults to active group)
+      require_context - If true, captures context even for files not in buffer
 
 require("marker-groups.state").get_state()           *marker-groups.state.get_state()*
     Get the current plugin state.
@@ -272,6 +292,14 @@ group. If you previously disabled display, you can re-enable it via: >
 
 Problem: Keybindings not working
 Solution: Check for conflicts and ensure keymaps.enabled = true.
+
+Problem: Markers pointing to wrong lines after external file changes
+Solution: The plugin automatically relocates markers when files change on disk
+between sessions. This works by storing the marked content and surrounding
+context. If relocation fails (content was deleted or heavily modified), markers
+remain at their original line numbers. To disable this behavior: >
+    require("marker-groups").setup({ enable_relocation = false })
+<
 
 Run :MarkerGroupsHealth for comprehensive diagnostics.
 

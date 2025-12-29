@@ -18,18 +18,32 @@ local function compare_versions(a, b)
   return az < bz
 end
 
+migrations["1.1.0"] = function(data)
+  return { success = true, data = data }
+end
+
 function M.migrate(data, from_version, to_version)
-  if not compare_versions(to_version, from_version) then
+  if not compare_versions(from_version, to_version) then
     return { success = true, data = data }
   end
 
-  local current = from_version
+  local ordered_versions = { "1.1.0" }
   local current_data = data
 
-  return {
-    success = false,
-    error = string.format("No migration path from %s to %s", tostring(from_version), tostring(to_version)),
-  }
+  for _, version in ipairs(ordered_versions) do
+    if compare_versions(from_version, version) and not compare_versions(to_version, version) then
+      local migration_fn = migrations[version]
+      if migration_fn then
+        local result = migration_fn(current_data)
+        if not result.success then
+          return result
+        end
+        current_data = result.data
+      end
+    end
+  end
+
+  return { success = true, data = current_data }
 end
 
 return M

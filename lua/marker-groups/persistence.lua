@@ -106,6 +106,9 @@ local function prepare_data_for_serialization()
         end_line = marker.end_line,
         annotation = marker.annotation,
         timestamp = marker.timestamp,
+        marked_content = marker.marked_content,
+        context_before = marker.context_before,
+        context_after = marker.context_after,
       })
     end
   end
@@ -310,6 +313,9 @@ function M.load()
         end_line = marker_data.end_line,
         annotation = marker_data.annotation,
         timestamp = marker_data.timestamp,
+        marked_content = marker_data.marked_content,
+        context_before = marker_data.context_before,
+        context_after = marker_data.context_after,
       }, group_name)
 
       if not add_result.success then
@@ -317,6 +323,26 @@ function M.load()
     end
 
     ::continue_group_loop::
+  end
+
+  if config.get_value("enable_relocation", true) then
+    local relocator = require "marker-groups.relocator"
+    local all_markers = {}
+    for _, group in pairs(state.get_all_groups()) do
+      for _, marker in ipairs(group.markers) do
+        table.insert(all_markers, marker)
+      end
+    end
+
+    local relocation_results = relocator.relocate_all_markers(all_markers)
+    for _, result in ipairs(relocation_results) do
+      if result.status ~= "unchanged" then
+        state.update_marker(result.marker_id, {
+          start_line = result.new_start,
+          end_line = result.new_end,
+        })
+      end
+    end
   end
 
   local set_active_result = state.set_active_group(data.active_group)

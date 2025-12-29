@@ -54,8 +54,9 @@ end
 --- @param end_line number|nil Ending line number (defaults to start_line for single-line)
 --- @param annotation string The marker annotation text
 --- @param group_name string|nil Target group (defaults to active group)
+--- @param require_context boolean|nil If true, load file to capture context even if not in buffer
 --- @return table Result { success: boolean, value?: Marker, error?: string, code?: string }
-function M.add_marker_at(file_path, start_line, end_line, annotation, group_name)
+function M.add_marker_at(file_path, start_line, end_line, annotation, group_name, require_context)
   if not file_path or type(file_path) ~= "string" or file_path == "" then
     return state.Result.error("File path is required", "INVALID_FILE_PATH")
   end
@@ -91,6 +92,19 @@ function M.add_marker_at(file_path, start_line, end_line, annotation, group_name
     end_line = end_line,
     annotation = validated_annotation,
   }
+
+  local should_capture_context = buffer_loaded or require_context
+  if should_capture_context then
+    local context_module = require "marker-groups.context"
+    local config = require "marker-groups.config"
+    local context_line_count = config.get_value("stored_context_lines", 3)
+    local context_data = context_module.capture(normalized_path, start_line, end_line, context_line_count)
+    if context_data then
+      marker_data.marked_content = context_data.marked_content
+      marker_data.context_before = context_data.context_before
+      marker_data.context_after = context_data.context_after
+    end
+  end
 
   local result = state.add_marker(marker_data, group_name)
   if not result.success then
