@@ -328,9 +328,11 @@ function M.load()
   if config.get_value("enable_relocation", true) then
     local relocator = require "marker-groups.relocator"
     local all_markers = {}
-    for _, group in pairs(state.get_all_groups()) do
+    local marker_to_group = {}
+    for group_name, group in pairs(state.get_all_groups()) do
       for _, marker in ipairs(group.markers) do
         table.insert(all_markers, marker)
+        marker_to_group[marker.id] = group_name
       end
     end
 
@@ -340,7 +342,7 @@ function M.load()
         state.update_marker(result.marker_id, {
           start_line = result.new_start,
           end_line = result.new_end,
-        })
+        }, marker_to_group[result.marker_id])
       end
     end
   end

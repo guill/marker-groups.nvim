@@ -672,4 +672,111 @@ T["relocation / multiple markers in same file - all relocate correctly"] = funct
   end)
 end
 
+--
+-- BUG REPRODUCTION: Markers in non-default groups fail to relocate
+-- Root cause: persistence.load() calls state.update_marker() without group_name,
+-- which defaults to the active group ("default"). But set_active_group() is called
+-- AFTER relocation, so markers in non-default groups are not found and not updated.
+--
+
+T["relocation / BUG: markers in non-default group should relocate correctly"] = function()
+  with_child(function(child)
+    child.lua [[
+      vim.g.__mg_force_persist = true
+      local dd = vim.fn.tempname() .. '_mg_reloc_bug'
+      require('marker-groups').setup({ 
+        data_dir = dd, 
+        log_level = 'error',
+        stored_context_lines = 3,
+        enable_relocation = true,
+      })
+      require('marker-groups.state').initialize(require('marker-groups.config').get())
+    ]]
+
+    local tmp_path = child.lua [[
+      vim.cmd('enew')
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+        'context line 1',
+        'context line 2',
+        'context line 3',
+        'MARKER TARGET LINE',
+        'context after 1',
+        'context after 2',
+        'context after 3',
+      })
+      local tmp = vim.fn.tempname() .. '.txt'
+      vim.cmd('write ' .. tmp)
+      
+      -- Create a non-default group and add marker to it
+      local state = require('marker-groups.state')
+      state.create_group('my-custom-group')
+      state.set_active_group('my-custom-group')
+      
+      vim.api.nvim_win_set_cursor(0, {4, 0})
+      local m = require('marker-groups.markers')
+      m.add_marker('marker-in-non-default-group')
+      
+      return tmp
+    ]]
+
+    -- Verify marker is in the custom group at line 4
+    local initial = child.lua [[
+      local state = require('marker-groups.state')
+      local group = state.get_group('my-custom-group')
+      if group and group.markers[1] then
+        return {
+          line = group.markers[1].start_line,
+          group = state.get_active_group()
+        }
+      end
+      return { line = -1, group = 'unknown' }
+    ]]
+    MiniTest.expect.equality(initial.line, 4)
+    MiniTest.expect.equality(initial.group, 'my-custom-group')
+
+    child.lua [[
+      require('marker-groups.persistence').save()
+      vim.cmd('bdelete!')
+    ]]
+
+    -- Modify the file: insert 3 lines at the beginning
+    write_file(tmp_path, {
+      "NEW LINE 1",
+      "NEW LINE 2",
+      "NEW LINE 3",
+      "context line 1",
+      "context line 2",
+      "context line 3",
+      "MARKER TARGET LINE",
+      "context after 1",
+      "context after 2",
+      "context after 3",
+    })
+
+    -- Re-initialize state and load from persistence (triggers relocation)
+    child.lua [[
+      local state = require('marker-groups.state')
+      state.initialize(require('marker-groups.config').get())
+      require('marker-groups.persistence').load()
+    ]]
+
+    child.lua("vim.cmd('edit ' .. vim.fn.fnameescape('" .. tmp_path .. "'))")
+
+    -- The marker should have been relocated from line 4 to line 7
+    local new_line = child.lua [[
+      local state = require('marker-groups.state')
+      local group = state.get_group('my-custom-group')
+      if group and group.markers[1] then
+        return group.markers[1].start_line
+      end
+      return -1
+    ]]
+
+    -- BUG: This currently fails! The marker stays at line 4 instead of relocating to line 7
+    -- because state.update_marker() in persistence.load() doesn't pass group_name,
+    -- defaulting to "default" group, and fails to find/update the marker.
+    MiniTest.expect.equality(new_line, 7)
+  end)
+end
+
 return T
