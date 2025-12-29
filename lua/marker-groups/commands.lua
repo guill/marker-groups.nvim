@@ -371,6 +371,58 @@ function M.setup()
       return { "eol", "below", "hidden" }
     end,
   })
+
+  vim.api.nvim_create_user_command("MarkerGroupsRelocate", function(args)
+    local feedback = require "marker-groups.feedback"
+    local relocator = require "marker-groups.relocator"
+    local state = require "marker-groups.state"
+    local virtual_text = require "marker-groups.ui.virtual_text"
+
+    local scope = args.args == "" and "buffer" or vim.trim(args.args)
+    local current_path = vim.api.nvim_buf_get_name(0)
+
+    local all_markers = {}
+    local marker_to_group = {}
+    for group_name, group in pairs(state.get_all_groups()) do
+      for _, marker in ipairs(group.markers) do
+        if scope == "all" or marker.buffer_path == current_path then
+          table.insert(all_markers, marker)
+          marker_to_group[marker.id] = group_name
+        end
+      end
+    end
+
+    if #all_markers == 0 then
+      feedback.notify("No markers to relocate", vim.log.levels.INFO, {})
+      return
+    end
+
+    local relocation_results = relocator.relocate_all_markers(all_markers)
+    local relocated_count = 0
+    for _, result in ipairs(relocation_results) do
+      if result.status ~= "unchanged" then
+        state.update_marker(result.marker_id, {
+          start_line = result.new_start,
+          end_line = result.new_end,
+        }, marker_to_group[result.marker_id])
+        relocated_count = relocated_count + 1
+      end
+    end
+
+    virtual_text.update_all_buffers()
+
+    local scope_desc = scope == "all" and "all buffers" or "current buffer"
+    feedback.success(
+      "Relocation Complete",
+      string.format("%d/%d markers relocated in %s", relocated_count, #all_markers, scope_desc)
+    )
+  end, {
+    nargs = "?",
+    desc = "Relocate markers to match current file content (buffer or all)",
+    complete = function()
+      return { "buffer", "all" }
+    end,
+  })
 end
 
 return M

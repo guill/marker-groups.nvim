@@ -119,4 +119,78 @@ T["drawer commands / width valid and invalid"] = function()
   end)
 end
 
+local function write_file(path, lines)
+  local file = io.open(path, "w")
+  if not file then
+    error("Failed to open file for writing: " .. path)
+  end
+  file:write(table.concat(lines, "\n"))
+  file:close()
+end
+
+T["relocation commands / MarkerGroupsRelocate relocates markers in current buffer"] = function()
+  with_child(function(child)
+    child.lua [[
+      require('marker-groups').setup({ 
+        data_dir = vim.fn.tempname() .. '_mg_relocate_cmd',
+        log_level = 'error',
+        stored_context_lines = 3,
+        enable_relocation = true,
+      })
+      require('marker-groups.state').initialize(require('marker-groups.config').get())
+      require('marker-groups.commands').setup()
+    ]]
+
+    local tmp_path = child.lua [[
+      vim.cmd('enew')
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+        'line 1',
+        'line 2',
+        'line 3',
+        'MARKER LINE',
+        'line 5',
+        'line 6',
+      })
+      local tmp = vim.fn.tempname() .. '.txt'
+      vim.cmd('write ' .. tmp)
+      
+      vim.api.nvim_win_set_cursor(0, {4, 0})
+      require('marker-groups.markers').add_marker('relocate-cmd-test')
+      return tmp
+    ]]
+
+    local initial_line = child.lua [[
+      local m = require('marker-groups.markers')
+      local markers = m.get_current_buffer_markers()
+      return markers[1] and markers[1].start_line or -1
+    ]]
+    MiniTest.expect.equality(initial_line, 4)
+
+    write_file(tmp_path, {
+      "NEW LINE 1",
+      "NEW LINE 2",
+      "line 1",
+      "line 2",
+      "line 3",
+      "MARKER LINE",
+      "line 5",
+      "line 6",
+    })
+
+    child.cmd "edit!"
+    child.cmd "MarkerGroupsRelocate"
+
+    local new_line = child.lua [[
+      local state = require('marker-groups.state')
+      local group = state.get_group('default')
+      if group and group.markers[1] then
+        return group.markers[1].start_line
+      end
+      return -1
+    ]]
+
+    MiniTest.expect.equality(new_line, 6)
+  end)
+end
+
 return T

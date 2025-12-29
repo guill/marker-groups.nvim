@@ -779,4 +779,138 @@ T["relocation / BUG: markers in non-default group should relocate correctly"] = 
   end)
 end
 
+T["relocation / automatic relocation via FileChangedShellPost"] = function()
+  with_child(function(child)
+    child.lua [[
+      vim.g.__mg_force_persist = true
+      vim.o.autoread = true
+      local dd = vim.fn.tempname() .. '_mg_reloc_auto'
+      require('marker-groups').setup({ 
+        data_dir = dd, 
+        log_level = 'error',
+        stored_context_lines = 3,
+        enable_relocation = true,
+      })
+      require('marker-groups.state').initialize(require('marker-groups.config').get())
+    ]]
+
+    local tmp_path = child.lua [[
+      vim.cmd('enew')
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+        'context 1',
+        'context 2',
+        'context 3',
+        'TARGET LINE',
+        'after 1',
+        'after 2',
+        'after 3',
+      })
+      local tmp = vim.fn.tempname() .. '.txt'
+      vim.cmd('write ' .. tmp)
+      
+      vim.api.nvim_win_set_cursor(0, {4, 0})
+      require('marker-groups.markers').add_marker('auto-relocate-test')
+      return tmp
+    ]]
+
+    local initial_line = child.lua [[
+      local m = require('marker-groups.markers')
+      local markers = m.get_current_buffer_markers()
+      return markers[1] and markers[1].start_line or -1
+    ]]
+    MiniTest.expect.equality(initial_line, 4)
+
+    write_file(tmp_path, {
+      "NEW 1",
+      "NEW 2",
+      "context 1",
+      "context 2",
+      "context 3",
+      "TARGET LINE",
+      "after 1",
+      "after 2",
+      "after 3",
+    })
+
+    child.lua [[
+      local m = require('marker-groups.markers')
+      m.relocate_buffer_markers(0)
+    ]]
+
+    local new_line = child.lua [[
+      local state = require('marker-groups.state')
+      local group = state.get_group('default')
+      if group and group.markers[1] then
+        return group.markers[1].start_line
+      end
+      return -1
+    ]]
+
+    MiniTest.expect.equality(new_line, 6)
+  end)
+end
+
+T["relocation / relocate_buffer_markers function works correctly"] = function()
+  with_child(function(child)
+    child.lua [[
+      vim.g.__mg_force_persist = true
+      local dd = vim.fn.tempname() .. '_mg_reloc_func'
+      require('marker-groups').setup({ 
+        data_dir = dd, 
+        log_level = 'error',
+        stored_context_lines = 3,
+        enable_relocation = true,
+      })
+      require('marker-groups.state').initialize(require('marker-groups.config').get())
+    ]]
+
+    local tmp_path = child.lua [[
+      vim.cmd('enew')
+      vim.api.nvim_buf_set_lines(0, 0, -1, false, {
+        'line A',
+        'line B',
+        'MARKER HERE',
+        'line D',
+        'line E',
+      })
+      local tmp = vim.fn.tempname() .. '.txt'
+      vim.cmd('write ' .. tmp)
+      
+      vim.api.nvim_win_set_cursor(0, {3, 0})
+      require('marker-groups.markers').add_marker('func-test')
+      return tmp
+    ]]
+
+    write_file(tmp_path, {
+      "INSERTED",
+      "INSERTED",
+      "INSERTED",
+      "line A",
+      "line B",
+      "MARKER HERE",
+      "line D",
+      "line E",
+    })
+
+    child.lua [[vim.cmd('edit!')]]
+
+    local result = child.lua [[
+      local m = require('marker-groups.markers')
+      return m.relocate_buffer_markers(0)
+    ]]
+
+    MiniTest.expect.equality(result.success, true)
+    MiniTest.expect.equality(result.relocated, 1)
+    MiniTest.expect.equality(result.total, 1)
+
+    local new_line = child.lua [[
+      local state = require('marker-groups.state')
+      local group = state.get_group('default')
+      return group.markers[1].start_line
+    ]]
+
+    MiniTest.expect.equality(new_line, 6)
+  end)
+end
+
 return T

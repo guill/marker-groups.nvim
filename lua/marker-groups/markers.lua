@@ -714,6 +714,22 @@ function M.setup_global_line_tracking()
     end,
   })
 
+  api.nvim_create_autocmd("FileChangedShellPost", {
+    group = group,
+    callback = function(args)
+      local buf = args.buf
+      if api.nvim_buf_is_valid(buf) then
+        local path = api.nvim_buf_get_name(buf)
+        if path and path ~= "" then
+          local markers = M.list_markers(nil, { buffer_path = path })
+          if #markers > 0 then
+            M.relocate_buffer_markers(buf)
+          end
+        end
+      end
+    end,
+  })
+
   api.nvim_create_autocmd("VimLeavePre", {
     group = group,
     callback = function()
@@ -846,6 +862,61 @@ function M.refresh_extmarks(buf)
   end
 
   M.update_buffer_markers(buf)
+end
+
+function M.relocate_buffer_markers(buf)
+  if not api.nvim_buf_is_valid(buf) then
+    return { success = false, relocated = 0, total = 0 }
+  end
+
+  local path = api.nvim_buf_get_name(buf)
+  if not path or path == "" then
+    return { success = false, relocated = 0, total = 0 }
+  end
+
+  local state = require "marker-groups.state"
+  local relocator = require "marker-groups.relocator"
+  local config = require "marker-groups.config"
+
+  if not config.get_value("enable_relocation", true) then
+    return { success = true, relocated = 0, total = 0, skipped = true }
+  end
+
+  local all_markers = {}
+  local marker_to_group = {}
+  for group_name, group in pairs(state.get_all_groups()) do
+    for _, marker in ipairs(group.markers) do
+      if marker.buffer_path == path then
+        table.insert(all_markers, marker)
+        marker_to_group[marker.id] = group_name
+      end
+    end
+  end
+
+  if #all_markers == 0 then
+    return { success = true, relocated = 0, total = 0 }
+  end
+
+  local relocation_results = relocator.relocate_markers_for_file(path, all_markers)
+  local relocated_count = 0
+  for _, result in ipairs(relocation_results) do
+    if result.status ~= "unchanged" then
+      state.update_marker(result.marker_id, {
+        start_line = result.new_start,
+        end_line = result.new_end,
+      }, marker_to_group[result.marker_id])
+      relocated_count = relocated_count + 1
+    end
+  end
+
+  M.refresh_extmarks(buf)
+
+  local virtual_text = require "marker-groups.ui.virtual_text"
+  if virtual_text and virtual_text.refresh_buffer then
+    virtual_text.refresh_buffer(buf)
+  end
+
+  return { success = true, relocated = relocated_count, total = #all_markers }
 end
 
 function M.debug_info()
