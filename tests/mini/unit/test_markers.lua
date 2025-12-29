@@ -202,4 +202,144 @@ T["validation integration / editing via module rejects line breaks"] = function(
   expect_matches(edit_result.error or "", "line breaks")
 end
 
+T["add_marker_at / adds marker to file that is not open"] = function()
+  local markers = require "marker-groups.markers"
+  local state = require "marker-groups.state"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\nLine 2\nLine 3\n")
+  file:close()
+
+  local result = markers.add_marker_at(temp_file, 2, nil, "Marker on line 2")
+  expect_truthy(result.success)
+  MiniTest.expect.equality(result.value.start_line, 2)
+  MiniTest.expect.equality(result.value.end_line, 2)
+  MiniTest.expect.equality(result.value.annotation, "Marker on line 2")
+
+  local group = state.get_group "default"
+  MiniTest.expect.equality(#group.markers, 1)
+
+  os.remove(temp_file)
+end
+
+T["add_marker_at / adds marker to file that is open in buffer"] = function()
+  local markers = require "marker-groups.markers"
+  local state = require "marker-groups.state"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\nLine 2\nLine 3\n")
+  file:close()
+
+  vim.cmd("edit " .. temp_file)
+  local buf = vim.api.nvim_get_current_buf()
+  table.insert(_G.__mg_created_bufs, buf)
+
+  local result = markers.add_marker_at(temp_file, 1, 2, "Multi-line marker")
+  expect_truthy(result.success)
+  MiniTest.expect.equality(result.value.start_line, 1)
+  MiniTest.expect.equality(result.value.end_line, 2)
+
+  local group = state.get_group "default"
+  MiniTest.expect.equality(#group.markers, 1)
+
+  os.remove(temp_file)
+end
+
+T["add_marker_at / rejects non-existent file"] = function()
+  local markers = require "marker-groups.markers"
+
+  local result = markers.add_marker_at("/nonexistent/path/file.lua", 1, nil, "Test")
+  expect_falsy(result.success)
+  MiniTest.expect.equality(result.code, "FILE_NOT_FOUND")
+end
+
+T["add_marker_at / rejects invalid file path"] = function()
+  local markers = require "marker-groups.markers"
+
+  local result1 = markers.add_marker_at(nil, 1, nil, "Test")
+  expect_falsy(result1.success)
+  MiniTest.expect.equality(result1.code, "INVALID_FILE_PATH")
+
+  local result2 = markers.add_marker_at("", 1, nil, "Test")
+  expect_falsy(result2.success)
+  MiniTest.expect.equality(result2.code, "INVALID_FILE_PATH")
+end
+
+T["add_marker_at / rejects invalid line numbers"] = function()
+  local markers = require "marker-groups.markers"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\n")
+  file:close()
+
+  local result1 = markers.add_marker_at(temp_file, 0, nil, "Test")
+  expect_falsy(result1.success)
+  MiniTest.expect.equality(result1.code, "INVALID_LINE")
+
+  local result2 = markers.add_marker_at(temp_file, 3, 1, "Test")
+  expect_falsy(result2.success)
+  MiniTest.expect.equality(result2.code, "INVALID_LINE")
+
+  os.remove(temp_file)
+end
+
+T["add_marker_at / validates annotation"] = function()
+  local markers = require "marker-groups.markers"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\n")
+  file:close()
+
+  local long_annotation = string.rep("a", 101)
+  local result = markers.add_marker_at(temp_file, 1, nil, long_annotation)
+  expect_falsy(result.success)
+  expect_matches(result.error or "", "cannot exceed 100 characters")
+
+  os.remove(temp_file)
+end
+
+T["add_marker_at / detects overlapping markers"] = function()
+  local markers = require "marker-groups.markers"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\nLine 2\nLine 3\n")
+  file:close()
+
+  local result1 = markers.add_marker_at(temp_file, 1, 2, "First marker")
+  expect_truthy(result1.success)
+
+  local result2 = markers.add_marker_at(temp_file, 2, 3, "Overlapping marker")
+  expect_falsy(result2.success)
+  expect_matches(result2.error or "", "overlap")
+
+  os.remove(temp_file)
+end
+
+T["add_marker_at / can delete marker added to non-open file"] = function()
+  local markers = require "marker-groups.markers"
+  local state = require "marker-groups.state"
+
+  local temp_file = vim.fn.tempname() .. ".lua"
+  local file = io.open(temp_file, "w")
+  file:write("Line 1\n")
+  file:close()
+
+  local add_result = markers.add_marker_at(temp_file, 1, nil, "To be deleted")
+  expect_truthy(add_result.success)
+
+  local marker_id = add_result.value.id
+  local delete_result = markers.delete_marker(marker_id)
+  expect_truthy(delete_result.success)
+
+  local group = state.get_group "default"
+  MiniTest.expect.equality(#group.markers, 0)
+
+  os.remove(temp_file)
+end
+
 return T

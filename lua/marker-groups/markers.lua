@@ -74,6 +74,65 @@ function M.add_marker_range(start_line, end_line, annotation, group_name)
   return state.Result.ok(marker)
 end
 
+--- @param file_path string Absolute or relative file path (will be normalized)
+--- @param start_line number Starting line number (1-indexed)
+--- @param end_line number|nil Ending line number (defaults to start_line for single-line)
+--- @param annotation string The marker annotation text
+--- @param group_name string|nil Target group (defaults to active group)
+--- @return table Result { success: boolean, value?: Marker, error?: string, code?: string }
+function M.add_marker_at(file_path, start_line, end_line, annotation, group_name)
+  if not file_path or type(file_path) ~= "string" or file_path == "" then
+    return state.Result.error("File path is required", "INVALID_FILE_PATH")
+  end
+
+  local normalized_path = vim.fn.fnamemodify(file_path, ":p")
+
+  if vim.fn.filereadable(normalized_path) == 0 then
+    return state.Result.error("File does not exist: " .. normalized_path, "FILE_NOT_FOUND")
+  end
+
+  end_line = end_line or start_line
+
+  if type(start_line) ~= "number" or start_line < 1 then
+    return state.Result.error("start_line must be a positive number", "INVALID_LINE")
+  end
+  if type(end_line) ~= "number" or end_line < start_line then
+    return state.Result.error("end_line must be >= start_line", "INVALID_LINE")
+  end
+
+  local annotation_validation = error_handling.validate_input(annotation or "", "annotation")
+  if not annotation_validation.success then
+    return annotation_validation
+  end
+  local validated_annotation = annotation_validation.value
+
+  local marker_data = {
+    buffer_path = normalized_path,
+    start_line = start_line,
+    end_line = end_line,
+    annotation = validated_annotation,
+  }
+
+  local result = state.add_marker(marker_data, group_name)
+  if not result.success then
+    return result
+  end
+
+  local marker = result.value
+
+  local buf = vim.fn.bufnr(normalized_path)
+  if buf ~= -1 and api.nvim_buf_is_loaded(buf) then
+    local extmark_id = M.create_extmark(buf, marker)
+    if extmark_id then
+      marker.extmark_id = extmark_id
+      state.update_marker(marker.id, { extmark_id = extmark_id })
+    end
+    M.update_buffer_markers(buf)
+  end
+
+  return state.Result.ok(marker)
+end
+
 function M.get_visual_selection_info()
   local ls = require "marker-groups.line_selection"
   local mode = api.nvim_get_mode().mode
