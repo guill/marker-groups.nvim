@@ -347,6 +347,30 @@ function M.setup()
   end, {
     desc = "Show picker backend status and availability",
   })
+
+  vim.api.nvim_create_user_command("MarkerAnnotationMode", function(args)
+    local virtual_text = require "marker-groups.ui.virtual_text"
+    local feedback = require "marker-groups.feedback"
+
+    if args.args == "" then
+      local new_mode = virtual_text.cycle_annotation_mode()
+      feedback.success("Annotation Mode", "Switched to: " .. new_mode)
+    else
+      local mode = vim.trim(args.args)
+      local ok, err = virtual_text.set_annotation_mode(mode)
+      if ok then
+        feedback.success("Annotation Mode", "Set to: " .. mode)
+      else
+        feedback.notify(err, vim.log.levels.ERROR, {})
+      end
+    end
+  end, {
+    nargs = "?",
+    desc = "Get/set annotation display mode (eol, below, hidden)",
+    complete = function()
+      return { "eol", "below", "hidden" }
+    end,
+  })
 end
 
 return M

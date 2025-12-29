@@ -87,7 +87,8 @@ Group Management:
 
 Marker Operations:
 :MarkerAdd [{annotation}]                            *:MarkerAdd*
-    Add a marker at cursor position or visual selection (annotation up to 500 UTF-8 characters).
+    Add a marker at cursor position or visual selection. Annotations support
+    multiple lines (up to 10 lines, 1000 total characters).
 
 :MarkerRemove                                        *:MarkerRemove*
     Remove marker at current cursor position.
@@ -116,6 +117,16 @@ Drawer Controls:
 
 :MarkerGroupsDrawerWidth [width]                     *:MarkerGroupsDrawerWidth*
     Get or set drawer width (30-120 columns).
+
+:MarkerAnnotationMode [{mode}]                       *:MarkerAnnotationMode*
+    Get or set annotation display mode. Valid modes:
+    - "eol": Display annotations at end of line (default). Multi-line
+      annotations show first line with "(+N lines)" indicator.
+    - "below": Display annotations as virtual lines below the code line.
+      Supports multi-line with word wrapping and optional box-drawing borders.
+    - "hidden": Hide all inline annotations (drawer-only).
+    
+    Without argument, cycles through modes: eol -> below -> hidden -> eol.
 
 ==============================================================================
 5. KEYBINDINGS                                    *marker-groups-keybindings*
@@ -163,16 +174,25 @@ Default configuration: >
       context_lines = 2,
       
       -- Virtual text display
-       max_annotation_display = 50,
+      max_annotation_display = 50,
       
-       -- Highlight groups used for rendering (override names to integrate with colorschemes)
-       highlight_groups = {
-         marker = "MarkerGroupsMarker",
-         annotation = "MarkerGroupsAnnotation",
-         context = "MarkerGroupsContext",
-         multiline_start = "MarkerGroupsMultilineStart",
-         multiline_end = "MarkerGroupsMultilineEnd",
-       },
+      -- Annotation display mode and options
+      annotation_display = {
+        mode = "eol",           -- "eol" | "below" | "hidden"
+        max_virtual_lines = 5,  -- Max lines shown in "below" mode
+        wrap_width = 0,         -- Auto-wrap width (0 = auto based on window)
+        show_borders = true,    -- Show box-drawing borders in "below" mode
+      },
+      
+      -- Highlight groups used for rendering (override names to integrate with colorschemes)
+      highlight_groups = {
+        marker = "MarkerGroupsMarker",
+        annotation = "MarkerGroupsAnnotation",
+        context = "MarkerGroupsContext",
+        multiline_start = "MarkerGroupsMultilineStart",
+        multiline_end = "MarkerGroupsMultilineEnd",
+        annotation_border = "MarkerGroupsAnnotationBorder",
+      },
       
       -- Keybinding configuration (declarative)
       keymaps = {
@@ -224,6 +244,12 @@ require("marker-groups.markers").add_marker(annotation, group) *marker-groups.ma
 
 require("marker-groups.state").get_state()           *marker-groups.state.get_state()*
     Get the current plugin state.
+
+require("marker-groups").get_annotation_mode()       *marker-groups.get_annotation_mode()*
+    Get the current annotation display mode ("eol", "below", or "hidden").
+
+require("marker-groups").set_annotation_mode(mode)   *marker-groups.set_annotation_mode()*
+    Set the annotation display mode. Returns (ok, error_message).
 
 ==============================================================================
 8. TROUBLESHOOTING                              *marker-groups-troubleshooting*

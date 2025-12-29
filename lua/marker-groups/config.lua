@@ -4,7 +4,9 @@ M.options = nil
 
 local INTERNAL = {
   max_group_name_chars = 100,
-  max_annotation_chars = 100,
+  max_annotation_chars = 1000,
+  max_annotation_lines = 10,
+  max_annotation_total_chars = 1000,
 }
 
 local defaults = {
@@ -33,6 +35,13 @@ local defaults = {
 
   context_lines = 2,
   max_annotation_display = 50,
+
+  annotation_display = {
+    mode = "eol",
+    max_virtual_lines = 5,
+    wrap_width = 0,
+    show_borders = true,
+  },
 
   keymaps = {
     enabled = true,
@@ -128,6 +137,28 @@ local function validate_config(config)
     end
     if config.drawer_config.side and config.drawer_config.side ~= "left" and config.drawer_config.side ~= "right" then
       return false, "config.drawer_config.side must be 'left' or 'right'"
+    end
+  end
+
+  if config.annotation_display then
+    local valid_modes = { eol = true, below = true, hidden = true }
+    if config.annotation_display.mode and not valid_modes[config.annotation_display.mode] then
+      return false, "config.annotation_display.mode must be 'eol', 'below', or 'hidden'"
+    end
+    if
+      config.annotation_display.max_virtual_lines
+      and (type(config.annotation_display.max_virtual_lines) ~= "number" or config.annotation_display.max_virtual_lines < 1)
+    then
+      return false, "config.annotation_display.max_virtual_lines must be a positive number"
+    end
+    if
+      config.annotation_display.wrap_width
+      and (type(config.annotation_display.wrap_width) ~= "number" or config.annotation_display.wrap_width < 0)
+    then
+      return false, "config.annotation_display.wrap_width must be a non-negative number"
+    end
+    if config.annotation_display.show_borders and type(config.annotation_display.show_borders) ~= "boolean" then
+      return false, "config.annotation_display.show_borders must be a boolean"
     end
   end
 

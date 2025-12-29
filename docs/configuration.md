@@ -15,12 +15,22 @@ require("marker-groups").setup({
   },
   context_lines = 2,
   max_annotation_display = 50,
+  
+  -- Annotation display mode and options
+  annotation_display = {
+    mode = "eol",           -- "eol" | "below" | "hidden"
+    max_virtual_lines = 5,  -- Max lines shown in "below" mode
+    wrap_width = 0,         -- Auto-wrap width (0 = auto based on window)
+    show_borders = true,    -- Show box-drawing borders in "below" mode
+  },
+  
   highlight_groups = {
     marker = "MarkerGroupsMarker",
     annotation = "MarkerGroupsAnnotation",
     context = "MarkerGroupsContext",
     multiline_start = "MarkerGroupsMultilineStart",
     multiline_end = "MarkerGroupsMultilineEnd",
+    annotation_border = "MarkerGroupsAnnotationBorder",
   },
   keymaps = {
     enabled = true,
@@ -52,7 +62,29 @@ require("marker-groups").setup({
 
 ## Limits
 
-- Annotations: up to 500 UTF‑8 characters (inputs longer than this are truncated)
+- Annotations: up to 1000 UTF‑8 characters and 10 lines (inputs exceeding these are truncated)
 - Group names: up to 100 UTF‑8 characters (inputs longer than this are truncated)
+
+## Annotation Display Modes
+
+The `annotation_display.mode` option controls how annotations are displayed inline:
+
+| Mode | Description |
+|------|-------------|
+| `"eol"` | (Default) Display at end of line. Multi-line annotations show first line with "(+N lines)" indicator. |
+| `"below"` | Display as virtual lines below the code. Supports multi-line with word wrapping and box-drawing borders. |
+| `"hidden"` | Hide all inline annotations. Markers are only visible in the drawer. |
+
+You can change modes at runtime using `:MarkerAnnotationMode {mode}` or cycle through modes with `:MarkerAnnotationMode` (no argument).
+
+### Lua API
+
+```lua
+-- Get current mode
+local mode = require("marker-groups").get_annotation_mode()
+
+-- Set mode
+require("marker-groups").set_annotation_mode("below")
+```
 
 

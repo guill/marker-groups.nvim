@@ -82,15 +82,29 @@ function M.validate_input(input, field)
   end
 
   if field == "annotation" then
-    if value:find "\n" or value:find "\r" then
-      return { success = false, error = "Annotation cannot contain line breaks", code = "INVALID_ANNOTATION" }
+    local normalized = value:gsub("\r\n", "\n"):gsub("\r", "\n")
+    local cleaned = normalized:gsub("[\1-\9\11\12\14-\31\127]", "")
+
+    local line_count = select(2, cleaned:gsub("\n", "\n")) + 1
+    local max_lines = require("marker-groups.config").get_internal "max_annotation_lines" or 10
+    if line_count > max_lines then
+      return {
+        success = false,
+        error = string.format("Annotation cannot exceed %d lines", max_lines),
+        code = "ANNOTATION_TOO_MANY_LINES",
+      }
     end
-    local cleaned = value:gsub("%c", "")
-    local limit = 100
-    local len = vim.fn.strchars(cleaned)
-    if len > limit then
-      return { success = false, error = "Annotation cannot exceed 100 characters", code = "INVALID_ANNOTATION" }
+
+    local max_chars = require("marker-groups.config").get_internal "max_annotation_total_chars" or 1000
+    local char_count = vim.fn.strchars(cleaned)
+    if char_count > max_chars then
+      return {
+        success = false,
+        error = string.format("Annotation cannot exceed %d characters", max_chars),
+        code = "ANNOTATION_TOO_LONG",
+      }
     end
+
     return { success = true, value = cleaned }
   elseif field == "group_name" then
     local sanitized = value:gsub("[\r\n\t]", " ")

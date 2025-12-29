@@ -140,13 +140,23 @@ require("marker-groups").setup({
   context_lines = 2,
 
   -- Virtual text display & highlight groups
-  max_annotation_display = 50, -- truncate long annotations
+  max_annotation_display = 50, -- truncate long annotations in EOL mode
+  
+  -- Annotation display mode (supports multi-line annotations)
+  annotation_display = {
+    mode = "eol",           -- "eol" | "below" | "hidden"
+    max_virtual_lines = 5,  -- Max lines shown in "below" mode
+    wrap_width = 0,         -- Auto-wrap width (0 = auto based on window)
+    show_borders = true,    -- Show box-drawing borders in "below" mode
+  },
+  
   highlight_groups = {
     marker = "MarkerGroupsMarker",
     annotation = "MarkerGroupsAnnotation",
     context = "MarkerGroupsContext",
     multiline_start = "MarkerGroupsMultilineStart",
     multiline_end = "MarkerGroupsMultilineEnd",
+    annotation_border = "MarkerGroupsAnnotationBorder",
   },
 
   -- Keybindings (declarative; override per entry or disable by setting to false)
@@ -184,8 +194,18 @@ require("marker-groups").setup({
 
 ### Limits
 
-- Annotations: up to 500 UTF‑8 characters. Inputs longer than this are truncated in command prompts/args.
+- Annotations: up to 1000 UTF‑8 characters and 10 lines. Multi-line annotations are supported.
 - Group names: up to 100 UTF‑8 characters. Longer names are truncated in command prompts/args.
+
+### Annotation Display Modes
+
+Use `:MarkerAnnotationMode` to change how annotations appear inline:
+
+| Mode | Description |
+|------|-------------|
+| `eol` | (Default) End of line. Multi-line shows first line + "(+N lines)". |
+| `below` | Virtual lines below code with word wrap and optional borders. |
+| `hidden` | Hide inline annotations (drawer-only). |
 
 ## 🎯 Use Cases
 

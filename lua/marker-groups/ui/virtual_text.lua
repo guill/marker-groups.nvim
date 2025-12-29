@@ -9,6 +9,45 @@ local _cached_namespaces = {}
 local _update_timers = {}
 local _hydrating = false
 
+local function get_smallest_window_width(bufnr)
+  local smallest_width = nil
+  for _, win in ipairs(api.nvim_list_wins()) do
+    if api.nvim_win_get_buf(win) == bufnr then
+      local width = api.nvim_win_get_width(win)
+      if not smallest_width or width < smallest_width then
+        smallest_width = width
+      end
+    end
+  end
+  return smallest_width or 80
+end
+
+local function word_wrap(text, width)
+  if width <= 0 or #text <= width then
+    return { text }
+  end
+
+  local result = {}
+  local begin_pos = 1
+
+  while begin_pos + width < #text do
+    local end_pos = begin_pos + width
+    local substring = string.sub(text, begin_pos, end_pos)
+    local prestring, after_space = string.match(substring, "(.*)%s+()")
+
+    if not after_space then
+      prestring = substring
+      after_space = begin_pos + #substring
+    end
+
+    table.insert(result, prestring)
+    begin_pos = begin_pos + after_space - 1
+  end
+
+  table.insert(result, string.sub(text, begin_pos))
+  return result
+end
+
 local function get_namespace(name)
   if not _cached_namespaces[name] then
     _cached_namespaces[name] = api.nvim_create_namespace(name)
@@ -41,6 +80,10 @@ function M.setup_highlights()
       light = { fg = "#AF00DB" },
       dark = { fg = "#C678DD" },
     },
+    MarkerGroupsAnnotationBorder = {
+      light = { fg = "#6A6A6A" },
+      dark = { fg = "#5C6370" },
+    },
   }
 
   local cfg = config.get()
@@ -51,6 +94,7 @@ function M.setup_highlights()
     MarkerGroupsContext = hls.context or "MarkerGroupsContext",
     MarkerGroupsMultilineStart = hls.multiline_start or "MarkerGroupsMultilineStart",
     MarkerGroupsMultilineEnd = hls.multiline_end or "MarkerGroupsMultilineEnd",
+    MarkerGroupsAnnotationBorder = hls.annotation_border or "MarkerGroupsAnnotationBorder",
   }
 
   for default_group, colors in pairs(highlights) do
@@ -82,9 +126,17 @@ local function format_annotation(annotation, max_length)
 
   max_length = max_length or config.get_value("max_annotation_display", 50)
 
-  local formatted = annotation:gsub("\n", " "):gsub("\r", " ")
+  local lines = vim.split(annotation, "\n", { plain = true })
+  local formatted = lines[1] or ""
 
-  if #formatted > max_length then
+  if #lines > 1 then
+    local suffix = string.format(" (+%d lines)", #lines - 1)
+    local available = max_length - #suffix
+    if #formatted > available then
+      formatted = formatted:sub(1, math.max(1, available - 3)) .. "..."
+    end
+    formatted = formatted .. suffix
+  elseif #formatted > max_length then
     formatted = formatted:sub(1, max_length - 3) .. "..."
   end
 
@@ -126,14 +178,215 @@ local function create_marker_virtual_text(marker, marker_type, context_info)
   return virtual_text
 end
 
+local function create_annotation_virt_lines(marker, bufnr, display_config)
+  local cfg = config.get()
+  local hls = cfg.highlight_groups or {}
+  local hl_annotation = hls.annotation or "MarkerGroupsAnnotation"
+  local hl_border = hls.annotation_border or "MarkerGroupsAnnotationBorder"
+  local hl_marker = hls.marker or "MarkerGroupsMarker"
+  local hl_context = hls.context or "MarkerGroupsContext"
+
+  local annotation = marker.annotation or ""
+  if annotation == "" then
+    return nil
+  end
+
+  local max_lines = display_config.max_virtual_lines or 5
+  local show_borders = display_config.show_borders ~= false
+  local wrap_width = display_config.wrap_width or 0
+
+  if wrap_width == 0 then
+    local win_width = get_smallest_window_width(bufnr)
+    wrap_width = math.max(20, win_width - 10)
+  end
+
+  local raw_lines = vim.split(annotation, "\n", { plain = true })
+  local wrapped_lines = {}
+
+  for _, line in ipairs(raw_lines) do
+    local wrapped = word_wrap(line, wrap_width - 6)
+    for _, wl in ipairs(wrapped) do
+      table.insert(wrapped_lines, wl)
+    end
+  end
+
+  local virt_lines = {}
+  local truncated = #wrapped_lines > max_lines
+
+  if show_borders then
+    table.insert(virt_lines, {
+      { "   ", "" },
+      { "┌─ ", hl_border },
+      { cfg.signs.marker .. " ", hl_marker },
+    })
+  end
+
+  local lines_to_show = truncated and max_lines or #wrapped_lines
+  for i = 1, lines_to_show do
+    local line_content = wrapped_lines[i] or ""
+    if show_borders then
+      table.insert(virt_lines, {
+        { "   ", "" },
+        { "│ ", hl_border },
+        { line_content, hl_annotation },
+      })
+    else
+      table.insert(virt_lines, {
+        { "     ", "" },
+        { line_content, hl_annotation },
+      })
+    end
+  end
+
+  if truncated then
+    local remaining = #wrapped_lines - max_lines
+    if show_borders then
+      table.insert(virt_lines, {
+        { "   ", "" },
+        { "│ ", hl_border },
+        { string.format("(+%d more lines...)", remaining), hl_context },
+      })
+    else
+      table.insert(virt_lines, {
+        { "     ", "" },
+        { string.format("(+%d more lines...)", remaining), hl_context },
+      })
+    end
+  end
+
+  if show_borders then
+    table.insert(virt_lines, {
+      { "   ", "" },
+      { "└─────────────", hl_border },
+    })
+  end
+
+  return virt_lines
+end
+
+local function render_multiline_below_mode(buf, vt_ns, marker, display_config, priority)
+  local cfg = config.get()
+  local hls = cfg.highlight_groups or {}
+  local hl_border = hls.annotation_border or "MarkerGroupsAnnotationBorder"
+  local hl_marker = hls.marker or "MarkerGroupsMarker"
+  local hl_annotation = hls.annotation or "MarkerGroupsAnnotation"
+  local hl_context = hls.context or "MarkerGroupsContext"
+
+  local show_borders = display_config.show_borders ~= false
+  local max_lines = display_config.max_virtual_lines or 5
+  local wrap_width = display_config.wrap_width or 0
+
+  if wrap_width == 0 then
+    local win_width = get_smallest_window_width(buf)
+    wrap_width = math.max(20, win_width - 10)
+  end
+
+  local start_line = marker.start_line
+  local end_line = marker.end_line
+
+  if show_borders then
+    api.nvim_buf_set_extmark(buf, vt_ns, start_line - 1, 0, {
+      virt_lines = { { { "┌─ ", hl_border }, { cfg.signs.marker .. " ", hl_marker } } },
+      virt_lines_above = true,
+      hl_mode = "combine",
+      priority = priority,
+    })
+  end
+
+  if show_borders then
+    for line_num = start_line, end_line do
+      local line_idx = line_num - 1
+      local line_content = api.nvim_buf_get_lines(buf, line_idx, line_idx + 1, false)[1] or ""
+      local first_char = line_content:sub(1, 1)
+
+      if first_char == "" or first_char:match("%s") then
+        api.nvim_buf_set_extmark(buf, vt_ns, line_idx, 0, {
+          virt_text = { { "│", hl_border } },
+          virt_text_pos = "overlay",
+          hl_mode = "combine",
+          priority = priority,
+        })
+      end
+    end
+  end
+
+  local annotation = marker.annotation or ""
+  if annotation == "" then
+    if show_borders then
+      api.nvim_buf_set_extmark(buf, vt_ns, end_line - 1, 0, {
+        virt_lines = { { { "└─────────────", hl_border } } },
+        virt_lines_above = false,
+        hl_mode = "combine",
+        priority = priority,
+      })
+    end
+    return
+  end
+
+  local raw_lines = vim.split(annotation, "\n", { plain = true })
+  local wrapped_lines = {}
+
+  for _, line in ipairs(raw_lines) do
+    local wrapped = word_wrap(line, wrap_width - 4)
+    for _, wl in ipairs(wrapped) do
+      table.insert(wrapped_lines, wl)
+    end
+  end
+
+  local virt_lines = {}
+  local truncated = #wrapped_lines > max_lines
+
+  if show_borders then
+    table.insert(virt_lines, { { "├──", hl_border } })
+  end
+
+  local lines_to_show = truncated and max_lines or #wrapped_lines
+  for i = 1, lines_to_show do
+    local line_content = wrapped_lines[i] or ""
+    if show_borders then
+      table.insert(virt_lines, { { "│ ", hl_border }, { line_content, hl_annotation } })
+    else
+      table.insert(virt_lines, { { "  ", "" }, { line_content, hl_annotation } })
+    end
+  end
+
+  if truncated then
+    local remaining = #wrapped_lines - max_lines
+    if show_borders then
+      table.insert(virt_lines, { { "│ ", hl_border }, { string.format("(+%d more lines...)", remaining), hl_context } })
+    else
+      table.insert(virt_lines, { { "  ", "" }, { string.format("(+%d more lines...)", remaining), hl_context } })
+    end
+  end
+
+  if show_borders then
+    table.insert(virt_lines, { { "└─────────────", hl_border } })
+  end
+
+  api.nvim_buf_set_extmark(buf, vt_ns, end_line - 1, 0, {
+    virt_lines = virt_lines,
+    virt_lines_above = false,
+    hl_mode = "combine",
+    priority = priority,
+  })
+end
+
 function M.update_buffer_display(buf, markers)
   if not api.nvim_buf_is_valid(buf) then
     return
   end
 
+  local cfg = config.get()
+  local display_config = cfg.annotation_display or {}
+  local display_mode = display_config.mode or "eol"
+
   local vt_ns = get_namespace "marker_groups_virtual_text"
 
   api.nvim_buf_clear_namespace(buf, vt_ns, 0, -1)
+
+  if display_mode == "hidden" then
+    return
+  end
 
   table.sort(markers, function(a, b)
     return a.start_line < b.start_line
@@ -141,19 +394,14 @@ function M.update_buffer_display(buf, markers)
 
   for i, marker in ipairs(markers) do
     local success, err = pcall(function()
-      if marker.start_line == marker.end_line then
-        local virtual_text = create_marker_virtual_text(marker, "single")
+      local marker_type = marker.start_line == marker.end_line and "single" or "multiline_start"
 
+      if display_mode == "below" then
+        render_multiline_below_mode(buf, vt_ns, marker, display_config, 1000 + i)
+      else
+        local virtual_text = create_marker_virtual_text(marker, marker_type)
         api.nvim_buf_set_extmark(buf, vt_ns, marker.start_line - 1, -1, {
           virt_text = virtual_text,
-          virt_text_pos = "eol",
-          hl_mode = "combine",
-          priority = 1000 + i,
-        })
-      else
-        local start_vt = create_marker_virtual_text(marker, "multiline_start")
-        api.nvim_buf_set_extmark(buf, vt_ns, marker.start_line - 1, -1, {
-          virt_text = start_vt,
           virt_text_pos = "eol",
           hl_mode = "combine",
           priority = 1000 + i,
@@ -172,7 +420,7 @@ function M.update_buffer_display(buf, markers)
       end
     end)
 
-    if not success and config.get().debug then
+    if not success and cfg.debug then
       require("marker-groups.feedback").notify(
         string.format("Failed to create virtual text for marker %s: %s", marker.id or "unknown", err),
         vim.log.levels.WARN,
@@ -495,6 +743,39 @@ end
 
 function M.clear_buffer_autocmds()
   pcall(api.nvim_del_augroup_by_name, "MarkerGroupsVirtualText")
+end
+
+function M.get_annotation_mode()
+  return config.get_value("annotation_display.mode", "eol")
+end
+
+function M.set_annotation_mode(mode)
+  local valid_modes = { eol = true, below = true, hidden = true }
+  if not valid_modes[mode] then
+    return false, "Invalid mode. Must be 'eol', 'below', or 'hidden'"
+  end
+
+  config.update { annotation_display = { mode = mode } }
+  M.update_all_buffers()
+  return true, nil
+end
+
+function M.cycle_annotation_mode()
+  local modes = { "eol", "below", "hidden" }
+  local current = M.get_annotation_mode()
+  local current_idx = 1
+
+  for i, m in ipairs(modes) do
+    if m == current then
+      current_idx = i
+      break
+    end
+  end
+
+  local next_idx = (current_idx % #modes) + 1
+  local next_mode = modes[next_idx]
+  M.set_annotation_mode(next_mode)
+  return next_mode
 end
 
 return M

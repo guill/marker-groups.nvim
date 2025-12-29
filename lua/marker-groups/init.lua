@@ -76,4 +76,12 @@ function M.is_initialized()
   return _initialized
 end
 
+function M.get_annotation_mode()
+  return require("marker-groups.ui.virtual_text").get_annotation_mode()
+end
+
+function M.set_annotation_mode(mode)
+  return require("marker-groups.ui.virtual_text").set_annotation_mode(mode)
+end
+
 return M

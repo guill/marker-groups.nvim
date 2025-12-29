@@ -74,26 +74,24 @@ end
 
 T["input validation / annotation / accepts up to limit and rejects over"] = function()
   local eh = require "marker-groups.error_handling"
-  local limit = 500
+  local limit = 1000
   local okv = string.rep("a", limit)
   local res_ok = eh.validate_input(okv, "annotation")
   MiniTest.add_note("annotation limit=" .. tostring(limit) .. " success=" .. tostring(res_ok.success))
   expect_type(res_ok.success, "boolean")
   if res_ok.success then
     MiniTest.expect.equality(okv, res_ok.value)
-  else
-    expect_type(res_ok.error, "string")
   end
 
   local over = string.rep("a", limit + 1)
   local res_over = eh.validate_input(over, "annotation")
   expect_type(res_over.success, "boolean")
-  expect_type(res_over.error, "string")
+  MiniTest.expect.equality(res_over.success, false)
 end
 
 T["input validation / annotation / counts UTF-8"] = function()
   local eh = require "marker-groups.error_handling"
-  local limit = 500
+  local limit = 1000
   local base = string.rep("🚀", limit)
   local res_ok = eh.validate_input(base, "annotation")
   expect_type(res_ok.success, "boolean")
@@ -103,6 +101,7 @@ T["input validation / annotation / counts UTF-8"] = function()
   local over = base .. "🚀"
   local res_over = eh.validate_input(over, "annotation")
   expect_type(res_over.success, "boolean")
+  MiniTest.expect.equality(res_over.success, false)
 end
 
 T["input validation / annotation / counts trimmed length"] = function()

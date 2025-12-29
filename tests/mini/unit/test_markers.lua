@@ -72,13 +72,13 @@ end
 T["marker creation with validation / should validate annotations when adding markers"] = function()
   local markers = require "marker-groups.markers"
   create_scratch({ "Test line" }, "marker-validation")
-  local long_annotation = string.rep("a", 101)
+  local long_annotation = string.rep("a", 1001)
   local result = markers.add_marker(long_annotation)
   expect_falsy(result.success)
-  expect_matches(result.error or "", "cannot exceed 100 characters")
+  expect_matches(result.error or "", "cannot exceed 1000 characters")
 end
 
-T["marker creation with validation / editing markers rejects line breaks"] = function()
+T["marker creation with validation / editing markers accepts multi-line"] = function()
   local markers = require "marker-groups.markers"
   local state = require "marker-groups.state"
   create_scratch({ "Test line" }, "marker-edit")
@@ -91,11 +91,10 @@ T["marker creation with validation / editing markers rejects line breaks"] = fun
   local multi = "Line 1\nLine 2"
   local edit_result = markers.edit_marker(marker_id, multi)
   MiniTest.add_note("edit_result.error=" .. tostring(edit_result and edit_result.error))
-  expect_falsy(edit_result.success)
-  expect_matches(edit_result.error or "", "line breaks")
+  expect_truthy(edit_result.success)
 
   local updated = state.get_group "default"
-  MiniTest.expect.equality(updated.markers[1].annotation, "Valid annotation")
+  MiniTest.expect.equality(updated.markers[1].annotation, "Line 1\nLine 2")
 end
 
 T["marker range operations / should handle adding range markers"] = function()
@@ -114,10 +113,10 @@ end
 T["marker range operations / should validate range marker annotations"] = function()
   local markers = require "marker-groups.markers"
   create_scratch({ "Line 1", "Line 2" }, "marker-range-long")
-  local long_annotation = string.rep("a", 101)
+  local long_annotation = string.rep("a", 1001)
   local result = markers.add_marker_range(1, 2, long_annotation)
   expect_falsy(result.success)
-  expect_matches(result.error or "", "cannot exceed 100 characters")
+  expect_matches(result.error or "", "cannot exceed 1000 characters")
 end
 
 T["marker range operations / single-line inside multi-line in same group is not allowed"] = function()
@@ -178,13 +177,13 @@ end
 T["validation integration / validate annotations when adding markers via markers module"] = function()
   local markers = require "marker-groups.markers"
   create_scratch({ "Test line" }, "marker-integration")
-  local long_annotation = string.rep("a", 101)
+  local long_annotation = string.rep("a", 1001)
   local result = markers.add_marker(long_annotation)
   expect_falsy(result.success)
-  expect_matches(result.error or "", "cannot exceed 100 characters")
+  expect_matches(result.error or "", "cannot exceed 1000 characters")
 end
 
-T["validation integration / editing via module rejects line breaks"] = function()
+T["validation integration / editing via module accepts multi-line"] = function()
   local markers = require "marker-groups.markers"
   create_scratch({ "Test line" }, "marker-integration-lines")
 
@@ -198,8 +197,8 @@ T["validation integration / editing via module rejects line breaks"] = function(
   local multi = "Line 1\nLine 2"
   local edit_result = markers.edit_marker(marker_id, multi)
   MiniTest.add_note("edit_result.error=" .. tostring(edit_result and edit_result.error))
-  expect_falsy(edit_result.success)
-  expect_matches(edit_result.error or "", "line breaks")
+  expect_truthy(edit_result.success)
+  MiniTest.expect.equality(state.get_group("default").markers[1].annotation, "Line 1\nLine 2")
 end
 
 T["add_marker_at / adds marker to file that is not open"] = function()
@@ -294,10 +293,10 @@ T["add_marker_at / validates annotation"] = function()
   file:write("Line 1\n")
   file:close()
 
-  local long_annotation = string.rep("a", 101)
+  local long_annotation = string.rep("a", 1001)
   local result = markers.add_marker_at(temp_file, 1, nil, long_annotation)
   expect_falsy(result.success)
-  expect_matches(result.error or "", "cannot exceed 100 characters")
+  expect_matches(result.error or "", "cannot exceed 1000 characters")
 
   os.remove(temp_file)
 end
