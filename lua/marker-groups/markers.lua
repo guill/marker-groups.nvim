@@ -46,32 +46,7 @@ function M.add_marker_range(start_line, end_line, annotation, group_name)
     return state.Result.error("Line numbers out of range", "INVALID_LINE_RANGE")
   end
 
-  local annotation_validation = error_handling.validate_input(annotation or "", "annotation")
-  if not annotation_validation.success then
-    return annotation_validation
-  end
-  local validated_annotation = annotation_validation.value
-
-  local marker_data = {
-    buffer_path = path,
-    start_line = start_line,
-    end_line = end_line,
-    annotation = validated_annotation,
-  }
-
-  local result = state.add_marker(marker_data, group_name)
-  if not result.success then
-    return result
-  end
-
-  local marker = result.value
-
-  local extmark_id = M.create_extmark(buf, marker)
-  marker.extmark_id = extmark_id
-
-  M.update_buffer_markers(buf)
-
-  return state.Result.ok(marker)
+  return M.add_marker_at(path, start_line, end_line, annotation, group_name)
 end
 
 --- @param file_path string Absolute or relative file path (will be normalized)
@@ -87,7 +62,11 @@ function M.add_marker_at(file_path, start_line, end_line, annotation, group_name
 
   local normalized_path = vim.fn.fnamemodify(file_path, ":p")
 
-  if vim.fn.filereadable(normalized_path) == 0 then
+  local buf = vim.fn.bufnr(normalized_path)
+  local buffer_loaded = buf ~= -1 and api.nvim_buf_is_loaded(buf)
+  local file_exists = vim.fn.filereadable(normalized_path) == 1
+
+  if not file_exists and not buffer_loaded then
     return state.Result.error("File does not exist: " .. normalized_path, "FILE_NOT_FOUND")
   end
 
@@ -120,12 +99,21 @@ function M.add_marker_at(file_path, start_line, end_line, annotation, group_name
 
   local marker = result.value
 
-  local buf = vim.fn.bufnr(normalized_path)
-  if buf ~= -1 and api.nvim_buf_is_loaded(buf) then
-    local extmark_id = M.create_extmark(buf, marker)
-    if extmark_id then
-      marker.extmark_id = extmark_id
-      state.update_marker(marker.id, { extmark_id = extmark_id })
+  if buffer_loaded then
+    local extmark_success, extmark_result = pcall(function()
+      return M.create_extmark(buf, marker)
+    end)
+
+    if extmark_success and extmark_result then
+      marker.extmark_id = extmark_result
+      state.update_marker(marker.id, { extmark_id = extmark_result })
+    else
+      marker.extmark_id = nil
+      require("marker-groups.feedback").notify(
+        "Extmark creation failed, continuing without line tracking: " .. tostring(extmark_result),
+        vim.log.levels.DEBUG,
+        {}
+      )
     end
     M.update_buffer_markers(buf)
   end
@@ -193,57 +181,7 @@ function M.add_marker(annotation, group_name)
     return state.Result.error("Line numbers out of range", "INVALID_LINE_RANGE")
   end
 
-  local annotation_validation = error_handling.validate_input(annotation or "", "annotation")
-  if not annotation_validation.success then
-    return annotation_validation
-  end
-  local validated_annotation = annotation_validation.value
-
-  local marker_data = {
-    buffer_path = path,
-    start_line = start_line,
-    end_line = end_line,
-    annotation = validated_annotation,
-  }
-
-  local result = state.add_marker(marker_data, group_name)
-  if not result.success then
-    return result
-  end
-
-  local marker = result.value
-
-  local extmark_id = nil
-  local extmark_success, extmark_result = pcall(function()
-    local extmark_opts = {
-      strict = false,
-      right_gravity = false,
-    }
-
-    if start_line ~= end_line then
-      extmark_opts.end_line = end_line - 1
-      extmark_opts.end_col = 0
-      extmark_opts.end_right_gravity = false
-    end
-
-    return api.nvim_buf_set_extmark(buf, ns_id, start_line - 1, 0, extmark_opts)
-  end)
-
-  if extmark_success then
-    extmark_id = extmark_result
-    marker.extmark_id = extmark_id
-  else
-    marker.extmark_id = nil
-    require("marker-groups.feedback").notify(
-      "Extmark creation failed, continuing without line tracking: " .. tostring(extmark_result),
-      vim.log.levels.DEBUG,
-      {}
-    )
-  end
-
-  M.update_buffer_markers(buf)
-
-  return state.Result.ok(marker)
+  return M.add_marker_at(path, start_line, end_line, annotation, group_name)
 end
 
 function M.edit_marker(marker_id, new_annotation)
